@@ -74,3 +74,22 @@ class TestToolHandlers(unittest.TestCase):
         # The function expects a ServerTool, so we need to cast it to Any to bypass static analysis
         validated_tool = tool_handlers.get_validated_tool(cast(ServerTool, tool))
         self.assertIsNone(validated_tool)
+
+    def test_get_validated_tool_meta(self):
+        """
+        Test that a tool's meta is sent as `_meta`, e.g. for MCP Apps.
+        """
+        tool: ServerTool = {
+            "name": "ui_tool",
+            "description": "A tool with a UI",
+            "input_schema": {"type": "object", "properties": {}},
+            "output_schema": None,
+            "annotations": None,
+            "meta": {"ui": {"resourceUri": "ui://app/view"}},
+            "fn": MagicMock(),
+        }
+
+        validated_tool = tool_handlers.get_validated_tool(tool)
+        assert validated_tool is not None
+        dumped = validated_tool.model_dump(exclude_none=True, by_alias=True)
+        self.assertEqual(dumped["_meta"], {"ui": {"resourceUri": "ui://app/view"}})

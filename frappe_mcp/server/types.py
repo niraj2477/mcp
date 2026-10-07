@@ -1,6 +1,6 @@
 from typing import Any, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -55,6 +55,18 @@ class JSONRPCSuccessResponse(BaseModel):
 class BaseMetadata(BaseModel):
     name: str
     title: str | None = None
+
+
+class WithMeta(BaseModel):
+    """Adds MCP's `_meta` field, e.g. `_meta.ui.resourceUri` for MCP Apps.
+
+    Pydantic ignores attributes that start with an underscore, so the field is
+    `meta` in Python and `_meta` on the wire (dump with `by_alias=True`).
+    """
+
+    model_config = ConfigDict(validate_by_name=True)
+
+    meta: dict[str, Any] | None = Field(default=None, alias="_meta")
 
 
 class Implementation(BaseMetadata):
@@ -131,19 +143,19 @@ class GetPromptRequestParams(BaseModel):
     arguments: dict[str, str] | None = None
 
 
-class TextResourceContents(BaseModel):
+class TextResourceContents(WithMeta):
     uri: str
     mimeType: str | None = None
     text: str
 
 
-class BlobResourceContents(BaseModel):
+class BlobResourceContents(WithMeta):
     uri: str
     mimeType: str | None = None
     blob: str  # base64 encoded
 
 
-class Resource(BaseMetadata):
+class Resource(BaseMetadata, WithMeta):
     uri: str
     description: str | None = None
     mimeType: str | None = None
@@ -268,7 +280,7 @@ class CallToolRequestParams(BaseModel):
     arguments: dict[str, Any] | None = None
 
 
-class CallToolResult(BaseModel):
+class CallToolResult(WithMeta):
     content: list[ContentBlock]
     structuredContent: dict[str, Any] | None = None
     isError: bool | None = None
@@ -287,7 +299,7 @@ class ToolAnnotations(BaseModel):
     openWorldHint: bool | None = None
 
 
-class Tool(BaseMetadata):
+class Tool(BaseMetadata, WithMeta):
     description: str | None = None
     inputSchema: dict[str, Any]
     outputSchema: dict[str, Any] | None = None

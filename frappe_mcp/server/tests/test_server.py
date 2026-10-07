@@ -229,3 +229,108 @@ def test_handler_exception_returns_internal_error(mcp_instance):
 
     result = _post(mcp_instance, 'tools/call', {'name': 'boom', 'arguments': {}})
     assert result['result']['isError'] is True
+
+
+# ---------------------------------------------------------------------------
+# Resources and MCP Apps metadata
+# ---------------------------------------------------------------------------
+
+APP_MIME_TYPE = 'text/html;profile=mcp-app'
+
+
+@pytest.fixture
+def mcp_with_app():
+    mcp = MCP(name='frappe-mcp')
+
+    @mcp.resource(
+        'ui://test/view',
+        title='Test View',
+        mime_type=APP_MIME_TYPE,
+        meta={'ui': {'prefersBorder': True}},
+    )
+    def view():
+        """Interactive view."""
+        return '<!DOCTYPE html><html><body>view</body></html>'
+
+    @mcp.tool(meta={'ui': {'resourceUri': 'ui://test/view'}})
+    def show(item: str):
+        """Shows an item in the view."""
+        return types.CallToolResult(
+            content=[types.TextContent(text=f'Showing {item}')],
+            structuredContent={'item': item},
+            meta={'source': 'test'},
+        )
+
+    @mcp.tool()
+    def plain():
+        """A tool without UI."""
+        return 'plain'
+
+    return mcp
+
+
+def test_initialize_without_resources_omits_capability(mcp_instance):
+    result = _post(mcp_instance, 'initialize', {'clientInfo': {'name': 'test'}})
+    assert 'resources' not in result['result']['capabilities']
+
+
+def test_initialize_with_resources_has_capability(mcp_with_app):
+    result = _post(mcp_with_app, 'initialize', {'clientInfo': {'name': 'test'}})
+    assert result['result']['capabilities']['resources'] == {
+        'subscribe': False,
+        'listChanged': False,
+    }
+
+
+def test_handle_list_resources(mcp_with_app):
+    result = _post(mcp_with_app, 'resources/list')
+    assert result['result']['resources'] == [
+        {
+            'uri': 'ui://test/view',
+            'name': 'view',
+            'title': 'Test View',
+            'description': 'Interactive view.',
+            'mimeType': APP_MIME_TYPE,
+            '_meta': {'ui': {'prefersBorder': True}},
+        }
+    ]
+
+
+def test_handle_list_resource_templates(mcp_with_app):
+    result = _post(mcp_with_app, 'resources/templates/list')
+    assert result['result'] == {'resourceTemplates': []}
+
+
+def test_handle_read_resource(mcp_with_app):
+    result = _post(mcp_with_app, 'resources/read', {'uri': 'ui://test/view'})
+    (contents,) = result['result']['contents']
+    assert contents['uri'] == 'ui://test/view'
+    assert contents['mimeType'] == APP_MIME_TYPE
+    assert contents['text'].startswith('<!DOCTYPE html>')
+    assert contents['_meta'] == {'ui': {'prefersBorder': True}}
+
+
+def test_handle_read_resource_not_found(mcp_with_app):
+    result = _post(mcp_with_app, 'resources/read', {'uri': 'ui://test/missing'})
+    assert result['error']['code'] == -32602
+
+
+def test_resource_subscribe_not_implemented(mcp_with_app):
+    result = _post(mcp_with_app, 'resources/subscribe', {'uri': 'ui://test/view'})
+    assert result['error']['code'] == -32601
+
+
+def test_list_tools_includes_meta(mcp_with_app):
+    result = _post(mcp_with_app, 'tools/list')
+    tools = {tool['name']: tool for tool in result['result']['tools']}
+    assert tools['show']['_meta'] == {'ui': {'resourceUri': 'ui://test/view'}}
+    assert '_meta' not in tools['plain']
+
+
+def test_call_tool_returning_call_tool_result(mcp_with_app):
+    result = _post(mcp_with_app, 'tools/call', {'name': 'show', 'arguments': {'item': 'A'}})
+    assert result['result'] == {
+        'content': [{'type': 'text', 'text': 'Showing A'}],
+        'structuredContent': {'item': 'A'},
+        '_meta': {'source': 'test'},
+    }

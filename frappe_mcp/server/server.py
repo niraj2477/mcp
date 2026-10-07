@@ -9,6 +9,7 @@ from werkzeug.wrappers import Request, Response
 
 import frappe_mcp.server.handlers as handlers
 import frappe_mcp.server.prompts as prompts
+import frappe_mcp.server.resources as resources
 import frappe_mcp.server.tools as tools
 from frappe_mcp.server import types
 
@@ -24,7 +25,8 @@ class MCP:
 
     In a Frappe application, you would typically create a single instance of
     this class and use the `@mcp.register()` decorator on an API endpoint.
-    Tools can be added using the `@mcp.tool()` decorator.
+    Tools can be added using the `@mcp.tool()` decorator, and resources (such
+    as an MCP Apps UI) using the `@mcp.resource()` decorator.
 
     Example:
         ```python
@@ -53,11 +55,13 @@ class MCP:
     _name: str | None
     _tool_registry: OrderedDict[str, tools.Tool]
     _prompt_registry: OrderedDict[str, prompts.Prompt]
+    _resource_registry: OrderedDict[str, resources.Resource]
     _mcp_entry_fn: Callable | None
 
     def __init__(self, name: str | None):
         self._tool_registry = OrderedDict()
         self._prompt_registry = OrderedDict()
+        self._resource_registry = OrderedDict()
         self._name = name
         self._mcp_entry_fn = None
 
@@ -163,6 +167,7 @@ class MCP:
         input_schema: dict | None = None,
         use_entire_docstring: bool = False,
         annotations: tools.ToolAnnotations | None = None,
+        meta: dict | None = None,
         # stream: bool = False,  # stream yes or no (SSE)
         # whitelist: list | None = None,
         # role: str | None = None,
@@ -185,6 +190,8 @@ class MCP:
                 description. Otherwise, only the first section is used (i.e. no Args).
             annotations: Additional context about the tool, such as validation information
                 or examples of how to use it.
+            meta: The tool's `_meta`, e.g. `{"ui": {"resourceUri": "ui://app/view"}}`
+                to have MCP Apps hosts render its results with that UI resource.
         """
 
         def decorator(fn: Callable):
@@ -196,6 +203,7 @@ class MCP:
                     input_schema=input_schema,
                     use_entire_docstring=use_entire_docstring,
                     annotations=annotations,
+                    meta=meta,
                 ),
             )
             self.add_tool(tool)
@@ -264,6 +272,68 @@ class MCP:
         """
         self._prompt_registry[prompt['name']] = prompt
 
+    def resource(
+        self,
+        uri: str,
+        *,
+        name: str | None = None,
+        title: str | None = None,
+        description: str | None = None,
+        mime_type: str | None = None,
+        meta: dict | None = None,
+    ):
+        """A decorator that registers a function as a resource the client can read.
+
+        The decorated function takes no arguments and returns the resource's
+        content: a `str` for text, or `bytes` for binary content (sent base64
+        encoded).
+
+        Example (an MCP Apps UI, which a tool links to through its `meta`):
+            >>> @mcp.resource(
+            ...     'ui://my-app/view',
+            ...     mime_type='text/html;profile=mcp-app',
+            ...     meta={'ui': {'prefersBorder': True}},
+            ... )
+            ... def view():
+            ...     '''Interactive view of the results.'''
+            ...     return '<!DOCTYPE html><html>...</html>'
+
+        Args:
+            uri: The resource's URI, e.g. `ui://my-app/view`.
+            name: The resource name. Defaults to the function's __name__.
+            title: A human-readable title for display.
+            description: A description of the resource. Defaults to the docstring.
+            mime_type: The content's MIME type.
+            meta: The resource's `_meta`, e.g. `{"ui": {"csp": {...}}}`. It is sent
+                on the resources/list entry and on the resources/read content.
+        """
+
+        def decorator(fn: Callable):
+            resource = resources.get_resource(
+                fn,
+                uri,
+                resources.ResourceOptions(
+                    name=name,
+                    title=title,
+                    description=description,
+                    mime_type=mime_type,
+                    meta=meta,
+                ),
+            )
+            self.add_resource(resource)
+            return fn
+
+        return decorator
+
+    def add_resource(self, resource: resources.Resource):
+        """Registers a resource with the MCP instance.
+
+        Args:
+            resource: A Resource TypedDict with keys 'uri', 'name', 'title',
+                'description', 'mime_type', 'meta', and 'fn'.
+        """
+        self._resource_registry[resource['uri']] = resource
+
     def _handle_request(
         self,
         request_id: types.RequestId,
@@ -289,7 +359,11 @@ class MCP:
         try:
             match method:
                 case 'initialize':
-                    result = handlers.handle_initialize(params, self._name or 'frappe-mcp')
+                    result = handlers.handle_initialize(
+                        params,
+                        self._name or 'frappe-mcp',
+                        has_resources=bool(self._resource_registry),
+                    )
                 case 'ping':
                     result = handlers.handle_ping(params)
                 case 'completion/complete':
@@ -301,11 +375,15 @@ class MCP:
                 case 'prompts/list':
                     result = prompts.handle_list_prompts(params, self._prompt_registry)
                 case 'resources/list':
-                    result = handlers.handle_list_resources(params)
+                    result = resources.handle_list_resources(
+                        params, self._resource_registry
+                    )
                 case 'resources/templates/list':
-                    result = handlers.handle_list_resource_templates(params)
+                    result = resources.handle_list_resource_templates(params)
                 case 'resources/read':
-                    result = handlers.handle_read_resource(params)
+                    result = resources.handle_read_resource(
+                        params, self._resource_registry
+                    )
                 case 'resources/subscribe':
                     result = handlers.handle_subscribe(params)
                 case 'resources/unsubscribe':

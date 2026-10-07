@@ -53,9 +53,10 @@ uv add frappe-mcp
 
 ## Limitations
 
-Frappe MCP is yet in its infancy, as of now it **only supports** Tools.
-Remaining server features such as resources, prompts, tool streaming using SSE
-will be added as needed.
+Frappe MCP is yet in its infancy, as of now it **only supports** Tools, Prompts
+and static Resources (enough for [MCP Apps](#mcp-apps)). Remaining server
+features such as resource templates and subscriptions, and tool streaming using
+SSE will be added as needed.
 
 ## Auth
 
@@ -170,6 +171,7 @@ The decorator accepts the following optional arguments:
 - `input_schema` (optional `dict`): The JSON schema for the tool's input. If not provided, it will be inferred from the function's signature and docstring.
 - `use_entire_docstring` (optional `bool`): If `True`, the entire docstring will be used as the tool's description. Otherwise, only the first section is used (i.e. no `Args`). Defaults to `False`.
 - `annotations` (optional `dict`): Additional context about the tool, such as validation information or examples of how to use it. This should be a dictionary conforming to the `ToolAnnotations` `TypedDict` structure.
+- `meta` (optional `dict`): The tool's `_meta`, sent with it in `tools/list`. For example `{"ui": {"resourceUri": "ui://my-app/view"}}` links the tool to an [MCP Apps](#mcp-apps) UI.
 
 **Example:**
 
@@ -247,7 +249,30 @@ class Tool(TypedDict):
     input_schema: dict[str, Any]
     output_schema: dict[str, Any] | None
     annotations: ToolAnnotations | None
+    meta: dict[str, Any] | None
     fn: Callable
+```
+
+#### Tool Results
+
+A tool's return value is sent as text content. When it is a `dict`, it is also
+sent as `structuredContent`.
+
+To set the content, `structuredContent` and `_meta` separately, return a
+`CallToolResult`, which is sent as is. For example, readable text for the model
+and data for an [MCP Apps](#mcp-apps) UI:
+
+```python
+from frappe_mcp import CallToolResult, TextContent
+
+@mcp.tool()
+def get_weather(location: str):
+    '''Get the current weather in a given location.'''
+    weather = {"location": location, "temperature": 22}
+    return CallToolResult(
+        content=[TextContent(text=f"It is 22°C in {location}.")],
+        structuredContent=weather,
+    )
 ```
 
 #### Input Schema
@@ -291,6 +316,67 @@ will have this input schema:
 
 This input schema is generated from the tool body automatically when using the
 decorator.
+
+### Resources
+
+Resources are content the client can read by URI. They are registered with the
+`@mcp.resource` decorator, whose function takes no arguments and returns the
+content: a `str` for text, or `bytes` for binary content (sent base64 encoded).
+
+```python
+@mcp.resource("file:///docs/guide.md", mime_type="text/markdown")
+def guide():
+    '''How to use this server.'''
+    return "# Guide\n..."
+```
+
+The decorator accepts the URI and the following optional arguments:
+
+- `name` (optional `str`): The resource name. Defaults to the function's `__name__`.
+- `title` (optional `str`): A human-readable title for display.
+- `description` (optional `str`): Defaults to the function's docstring.
+- `mime_type` (optional `str`): The content's MIME type.
+- `meta` (optional `dict`): The resource's `_meta`. It is sent on the
+  `resources/list` entry and on the `resources/read` content.
+
+The server advertises the `resources` capability only when at least one resource
+is registered. Resource templates and subscriptions are not supported.
+
+`mcp.add_resource` registers a `Resource` built manually, like `mcp.add_tool`.
+
+#### MCP Apps
+
+[MCP Apps](https://github.com/modelcontextprotocol/ext-apps) let a tool's
+results be shown in an interactive UI in clients that support it, such as
+Claude, ChatGPT and VS Code. Other clients show the tool's text content.
+
+The UI is an HTML resource with a `ui://` URI and the
+`text/html;profile=mcp-app` MIME type, and the tool links to it through its
+`meta`:
+
+```python
+@mcp.resource(
+    "ui://weather/view",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True}},
+)
+def weather_view():
+    '''Weather card.'''
+    return "<!DOCTYPE html><html>...</html>"
+
+@mcp.tool(meta={"ui": {"resourceUri": "ui://weather/view"}})
+def get_weather(location: str):
+    '''Get the current weather in a given location.'''
+    return CallToolResult(
+        content=[TextContent(text=f"It is 22°C in {location}.")],
+        structuredContent={"location": location, "temperature": 22},
+    )
+```
+
+The page receives the tool's result from the client through `postMessage`; see
+the [specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
+for the messages, and for the CSP the client applies (declared under
+`meta["ui"]["csp"]`).
 
 ### MCP
 

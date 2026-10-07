@@ -47,6 +47,11 @@ def _get_result(fn, arguments):
     # TODO: check if tool_result is list of content blocks, if so, return it as is
 
     tool_result = fn(**arguments)
+    # Returned as is, for tools that set `content`, `structuredContent` and `_meta`
+    # separately: e.g. text for the model and data for an MCP Apps UI.
+    if isinstance(tool_result, types.CallToolResult):
+        return tool_result.model_dump(exclude_none=True, by_alias=True)
+
     content = types.TextContent(text='')
     if isinstance(tool_result, str):
         content.text = tool_result
@@ -90,12 +95,15 @@ def get_validated_tool(tool: tools.Tool):
         'inputSchema': tool.get('input_schema'),
         'outputSchema': tool.get('output_schema'),
         'annotations': tool.get('annotations'),
+        '_meta': tool.get('meta'),
     }
 
     if t['outputSchema'] is None:
         del t['outputSchema']
     if t['annotations'] is None:
         del t['annotations']
+    if t['_meta'] is None:
+        del t['_meta']
 
     try:
         return types.Tool.model_validate(t)

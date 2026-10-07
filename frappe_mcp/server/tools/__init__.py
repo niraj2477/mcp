@@ -26,6 +26,7 @@ class Tool(TypedDict):
     input_schema: dict[str, Any]
     output_schema: dict[str, Any] | None
     annotations: ToolAnnotations | None
+    meta: dict[str, Any] | None
     fn: Callable
 
 
@@ -43,6 +44,7 @@ class ToolOptions(TypedDict, total=False):
     input_schema: dict | None
     use_entire_docstring: bool
     annotations: ToolAnnotations | None
+    meta: dict[str, Any] | None
 
 
 def get_tool(fn: Callable, options: ToolOptions | None = None):
@@ -53,6 +55,7 @@ def get_tool(fn: Callable, options: ToolOptions | None = None):
             input_schema=None,
             use_entire_docstring=False,
             annotations=None,
+            meta=None,
         )
 
     name = options.get("name") or fn.__name__
@@ -77,6 +80,7 @@ def get_tool(fn: Callable, options: ToolOptions | None = None):
         input_schema=input_schema,
         output_schema=None,
         annotations=options.get("annotations"),
+        meta=options.get("meta"),
     )
     return tool
 
