@@ -334,3 +334,25 @@ def test_call_tool_returning_call_tool_result(mcp_with_app):
         'structuredContent': {'item': 'A'},
         '_meta': {'source': 'test'},
     }
+
+
+# ---------------------------------------------------------------------------
+# Server instructions
+# ---------------------------------------------------------------------------
+
+
+def test_initialize_without_instructions_omits_them(mcp_instance):
+    result = _post(mcp_instance, 'initialize', {'clientInfo': {'name': 'test'}})
+    assert 'instructions' not in result['result']
+
+
+def test_initialize_sends_instructions():
+    mcp = MCP(name='frappe-mcp', instructions='Call adder for sums.')
+    result = _post(mcp, 'initialize', {'clientInfo': {'name': 'test'}})
+    assert result['result']['instructions'] == 'Call adder for sums.'
+
+
+def test_initialize_empty_instructions_are_omitted():
+    mcp = MCP(name='frappe-mcp', instructions='')
+    result = _post(mcp, 'initialize', {'clientInfo': {'name': 'test'}})
+    assert 'instructions' not in result['result']

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 
-def handle_initialize(params, name: str, has_resources: bool = False):
+def handle_initialize(
+    params, name: str, has_resources: bool = False, instructions: str | None = None
+):
     """
     Handles the initialize request from the client.
 
     Resources are only advertised when some are registered, so servers without
-    any don't send clients looking for them.
+    any don't send clients looking for them. Instructions are sent when set.
     """
     capabilities = {
         'tools': {'listChanged': False},
@@ -18,12 +20,15 @@ def handle_initialize(params, name: str, has_resources: bool = False):
     if has_resources:
         capabilities['resources'] = {'subscribe': False, 'listChanged': False}
 
-    return {
+    result = {
         'protocolVersion': '2025-03-26',
         # "protocolVersion": "2024-11-05",
         'serverInfo': {'name': name, 'version': '0.1.0'},
         'capabilities': capabilities,
     }
+    if instructions:
+        result['instructions'] = instructions
+    return result
 
 
 def handle_ping(_):

@@ -393,6 +393,19 @@ added using the `@mcp.tool()` decorator.
 For use in other Werkzeug-based servers, you can use the `mcp.handle()` method
 directly.
 
+#### Server instructions
+
+`instructions` (optional `str`) tells clients how to use the server's tools, for
+example when to prefer one tool over another. It is sent in the `initialize`
+response, and clients such as Claude add it to the model's context.
+
+```python
+mcp = frappe_mcp.MCP(
+    "your-app-mcp",
+    instructions="Call get_defaults before tools that need a company or date.",
+)
+```
+
 #### `mcp.register` decorator
 
 This decorator is used in Frappe applications to designate a function as the

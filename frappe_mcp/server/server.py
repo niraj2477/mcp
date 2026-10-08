@@ -56,13 +56,22 @@ class MCP:
     _tool_registry: OrderedDict[str, tools.Tool]
     _prompt_registry: OrderedDict[str, prompts.Prompt]
     _resource_registry: OrderedDict[str, resources.Resource]
+    _instructions: str | None
     _mcp_entry_fn: Callable | None
 
-    def __init__(self, name: str | None):
+    def __init__(self, name: str | None, instructions: str | None = None):
+        """
+        Args:
+            name: The server name sent to clients.
+            instructions: How to use the server's tools, sent to clients when they
+                connect. Clients such as Claude add them to the model's context,
+                so they can describe when to use which tool.
+        """
         self._tool_registry = OrderedDict()
         self._prompt_registry = OrderedDict()
         self._resource_registry = OrderedDict()
         self._name = name
+        self._instructions = instructions
         self._mcp_entry_fn = None
 
     def register(
@@ -363,6 +372,7 @@ class MCP:
                         params,
                         self._name or 'frappe-mcp',
                         has_resources=bool(self._resource_registry),
+                        instructions=self._instructions,
                     )
                 case 'ping':
                     result = handlers.handle_ping(params)
